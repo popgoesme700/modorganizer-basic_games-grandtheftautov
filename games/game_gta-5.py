@@ -18,7 +18,8 @@ class GTAVModDataChecker(BasicModDataChecker):
 			delete=[
 				"*.txt",
 				"*.url",
-				"*.docx"
+				"*.docx",
+				"*.png",
 			],
 			valid=[
 				"*.asi",
@@ -32,6 +33,15 @@ class GTAVModDataChecker(BasicModDataChecker):
 		"bin/dinput8.dll":"root/",
 		"bin/NativeTrainer.asi":"",
 	}
+
+	_dont_move_these_rpf={
+
+	}
+
+	def _move_dlcpack_rpf(self,filetree:mobase.IFileTree)->mobase.IFileTree:
+		QtCore.qInfo(str(filetree))
+		return filetree
+
 	
 	def dataLooksValid(self,filetree:mobase.IFileTree)->mobase.ModDataChecker.CheckReturn:
 		parent=filetree.parent()
@@ -54,6 +64,7 @@ class GTAVModDataChecker(BasicModDataChecker):
 	
 	def fix(self,filetree:mobase.IFileTree)->mobase.IFileTree:
 		filetree=super().fix(filetree)
+		filetree=self._move_dlcpack_rpf(filetree)
 		for src,tgt in self._extra_move_items.items():
 			if file:=filetree.find(src):
 				parent=file.parent()
