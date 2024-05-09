@@ -13,8 +13,7 @@ class GTAVModDataChecker(BasicModDataChecker):
 	def __init__(self):
 		super().__init__(GlobPatterns(
 			move={
-				"**.dll":"root/",
-				"*.asi":"",
+				"*.dll":"root/",
 			},
 			delete=[
 				"*.txt",
@@ -22,35 +21,45 @@ class GTAVModDataChecker(BasicModDataChecker):
 				"*.docx"
 			],
 			valid=[
-				"*.rpf"
+				"*.asi",
+				"*.ini",
 				"root",
 			],
 		))
 	
-	_files_to_move={
-		"*.rpf":"mods",
+	_extra_move_items={
+		"bin/ScriptHookV.dll":"root/",
+		"bin/dinput8.dll":"root/",
+		"bin/NativeTrainer.asi":"",
 	}
 	
 	def dataLooksValid(self,filetree:mobase.IFileTree)->mobase.ModDataChecker.CheckReturn:
-		if super().dataLooksValid(filetree)==self.VALID: return self.VALID
 		parent=filetree.parent()
 		if parent is not None and self.dataLooksValid(parent) is self.FIXABLE:
 			return self.FIXABLE
-		status=self.INVALID
-		if any(filetree.exists(f) for f in self._files_to_move):
-			return self.FIXABLE
-		regex=self._regex_patterns
-		for e in filetree:
-			name=e.name().casefold()
-			if regex.move_match(name) is not None: return self.FIXABLE
-			elif regex.valid.match(name):
-				if status is self.INVALID: status=self.VALID
+		
+		status=super().dataLooksValid(filetree)
+		if any(filetree.exists(mf) for mf in self._extra_move_items):
+			status=self.FIXABLE
 
 		return status
+
+	def _clear_empty_folder(self,filetree:mobase.IFileTree|None):
+		if filetree is None: return
+		while not filetree:
+			parent=filetree.parent()
+			filetree.detach()
+			if parent is None: break
+			filetree=parent
 	
 	def fix(self,filetree:mobase.IFileTree)->mobase.IFileTree:
 		filetree=super().fix(filetree)
-		QtCore.qInfo(str(filetree))
+		for src,tgt in self._extra_move_items.items():
+			if file:=filetree.find(src):
+				parent=file.parent()
+				filetree.move(file,tgt)
+				self._clear_empty_folder(parent)
+			
 		return filetree
 
 @dataclass
