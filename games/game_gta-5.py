@@ -1,4 +1,4 @@
-#import os
+import os
 
 import mobase
 from collections.abc import Mapping
@@ -12,15 +12,46 @@ from typing import Any
 class GTAVModDataChecker(BasicModDataChecker):
 	def __init__(self):
 		super().__init__(GlobPatterns(
+			move={
+				"**.dll":"root/",
+				"*.asi":"",
+			},
+			delete=[
+				"*.txt",
+				"*.url",
+				"*.docx"
+			],
 			valid=[
-				"*.asi",
+				"*.rpf"
 				"root",
 			],
 		))
 	
+	_files_to_move={
+		"*.rpf":"mods",
+	}
+	
 	def dataLooksValid(self,filetree:mobase.IFileTree)->mobase.ModDataChecker.CheckReturn:
+		if super().dataLooksValid(filetree)==self.VALID: return self.VALID
+		parent=filetree.parent()
+		if parent is not None and self.dataLooksValid(parent) is self.FIXABLE:
+			return self.FIXABLE
 		status=self.INVALID
+		if any(filetree.exists(f) for f in self._files_to_move):
+			return self.FIXABLE
+		regex=self._regex_patterns
+		for e in filetree:
+			name=e.name().casefold()
+			if regex.move_match(name) is not None: return self.FIXABLE
+			elif regex.valid.match(name):
+				if status is self.INVALID: status=self.VALID
+
 		return status
+	
+	def fix(self,filetree:mobase.IFileTree)->mobase.IFileTree:
+		filetree=super().fix(filetree)
+		QtCore.qInfo(str(filetree))
+		return filetree
 
 @dataclass
 class PluginDefaultSettings:
@@ -47,7 +78,7 @@ class GTAVGame(BasicGame):
 	GameSteamId=271590
 	GameEpicId="9d2d0eb64d5c44529cece33fe2a46482"
 
-	GameBinary="GTAVLauncher.exe"
+	GameBinary="PlayGTAV.exe"
 	GameDataPath="%GAME_PATH%"
 	GameDocumentsDirectory=(
 		"%USERPROFILE%/Documents/Rockstar Games/"
@@ -83,16 +114,12 @@ class GTAVGame(BasicGame):
 				self._set_setting("configure_RootBuilder",False)
 		organizer.onUserInterfaceInitialized(apply_rootbuilder_settings_once)
 		organizer.onPluginEnabled("RootBuilder",apply_rootbuilder_settings_once)
+		organizer.onPluginSettingChanged(self._on_setting_update)
 
 		return True
 
 	def settings(self)->list[mobase.PluginSetting]:
 		sets=super().settings()
-		sets.append(mobase.PluginSetting(
-			"asi_folder_path",
-			"Decides where to place .asi files, relative to game directory. Defaults to mods folder, as most people use openiv.asi. If you use ultimate asi loader, use plugins instead.",
-			"mods",
-		))
 		sets.append(mobase.PluginSetting(
 			"configure_RootBuilder",
 			"Configures RootBuilder for Grand Theft Auto V if installed and enabled",
@@ -100,6 +127,11 @@ class GTAVGame(BasicGame):
 		))
 		return sets
 	
+	def _on_setting_update(self,plugin_name:str,setting:str,old:mobase.MoVariant,new:mobase.MoVariant):
+		if plugin_name!=self.name(): return
+		match setting:
+			case _: pass
+
 	def _get_setting(self,setting:str)->mobase.MoVariant:
 		return self._organizer.pluginSetting(self.name(),setting)
 
@@ -124,4 +156,7 @@ class GTAVGame(BasicGame):
 		return ini
 	
 	def initializeProfile(self,directory:QtCore.QDir,settings:mobase.ProfileSetting):
+		modspath=self.gameDirectory().absoluteFilePath("mods")
+		if not os.path.exists(modspath): os.mkdir(modspath)
 		super().initializeProfile(directory, settings)
+		
