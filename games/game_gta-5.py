@@ -1,30 +1,39 @@
 import os
+import shutil
 
 import mobase
 from collections.abc import Mapping
 from dataclasses import dataclass
 from ..basic_features import BasicModDataChecker,GlobPatterns
 from ..basic_game import BasicGame
-from PyQt6 import QtCore
+from PyQt6 import QtCore,QtWidgets
 
 from typing import Any
+from .gta_5 import RPF,GTA5Keys
 
 class GTAVModDataChecker(BasicModDataChecker):
 	def __init__(self):
 		super().__init__(GlobPatterns(
 			move={
 				"*.dll":"root/",
+				"*.exe":"root/",
 			},
 			delete=[
 				"*.txt",
 				"*.url",
 				"*.docx",
 				"*.png",
+				"*.log",
 			],
 			valid=[
 				"*.asi",
+				"*.log",
 				"*.ini",
+				"*.xml",
 				"root",
+				"mods",
+				"openiv",
+				"scripts",
 			],
 		))
 	
@@ -135,6 +144,27 @@ class GTAVGame(BasicGame):
 		organizer.onUserInterfaceInitialized(apply_rootbuilder_settings_once)
 		organizer.onPluginEnabled("RootBuilder",apply_rootbuilder_settings_once)
 		organizer.onPluginSettingChanged(self._on_setting_update)
+		organizer.onAboutToRun(self.onAboutToRun)
+
+		return True
+	
+	@staticmethod
+	def outputAbout(rpf:RPF.RPF):
+		QtWidgets.QMessageBox.about(None,"Version","0x"+str(rpf.header.version.value.to_bytes(4).hex().upper()))
+		QtWidgets.QMessageBox.about(None,"TOC Size",str(rpf.header.toc_size))
+		QtWidgets.QMessageBox.about(None,"Entries",str(rpf.header.entry_size))
+		QtWidgets.QMessageBox.about(None,"Unknown","0x"+str(rpf.header.unknown.to_bytes(4).hex().upper()))
+		QtWidgets.QMessageBox.about(None,"Encrypted","0x"+str(rpf.header.encrypted.value.to_bytes(4).hex().upper()))
+	
+	@staticmethod
+	def writeOutput(rpf:RPF.RPF,to_path:str):
+		res=rpf.write(to_path)
+		QtWidgets.QMessageBox.about(None,"The Bytes Written","0x"+str(res[0].hex().upper()))
+		QtWidgets.QMessageBox.about(None,"Bytes Written",""+str(res[1]))
+
+	def onAboutToRun(self,exe:str,work_dir:QtCore.QDir,args:str)->bool:
+		rpf=RPF.RPF(self.gameDirectory().absoluteFilePath("update/update.rpf"))
+		self.outputAbout(rpf)
 
 		return True
 
@@ -176,7 +206,26 @@ class GTAVGame(BasicGame):
 		return ini
 	
 	def initializeProfile(self,directory:QtCore.QDir,settings:mobase.ProfileSetting):
-		modspath=self.gameDirectory().absoluteFilePath("mods")
-		if not os.path.exists(modspath): os.mkdir(modspath)
+		def on_update(msg:str):
+			QtWidgets.QMessageBox.about(None,"Key Generation Status",msg)
+		GTA5Keys.GTA5Keys.generate(self.gameDirectory().absoluteFilePath("GTA5.exe"),on_update)
+
+		write=open(self._organizer.pluginDataPath()+"/keys.bin","wb")
+		write.write(GTA5Keys.GTA5Keys.pc_aes_key)
+		write.write(0x0000.to_bytes(2))
+		for key in GTA5Keys.GTA5Keys.pc_ng_keys:
+			write.write(key)
+			write.write(0xFF.to_bytes())
+		write.write(0x0000.to_bytes(2))
+		for list in GTA5Keys.GTA5Keys.pc_ng_decrypttables:
+			for list in list:
+				for key in list:
+					write.write(key.to_bytes(4))
+					write.write(0xFF.to_bytes())
+		write.write(0x0000.to_bytes(2))
+		write.write(GTA5Keys.GTA5Keys.pc_lut)
+		write.write(0x0000.to_bytes(2))
+		#modspath=self.gameDirectory().absoluteFilePath("mods")
+		#if not os.path.exists(modspath): os.mkdir(modspath)
 		super().initializeProfile(directory, settings)
 		
